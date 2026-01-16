@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美食随机转盘</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.2rem;
+        }
+
+        /* 转盘容器：承载转盘和指针 */
+        .wheel-container {
+            position: relative;
+            width: 450px;
+            height: 450px;
+            margin-bottom: 40px;
+        }
+
+        /* 转盘：圆形，隐藏溢出，扇区无重叠 */
+        .food-wheel {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 10px solid #fff;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+            transition: transform 3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transform: rotate(0deg);
+        }
+
+        /* 扇区：裁剪方向明确，无重叠 */
+        .wheel-sector {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            transform-origin: center center; /* 绕中心旋转 */
+            clip-path: polygon(50% 50%, 100% 0, 100% 50%); /* 顺时针裁剪扇形，方向明确 */
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 60px; /* 文字离边缘有距离 */
+        }
+
+        /* 文字：精准定位在扇区中心，无偏移 */
+        .sector-text {
+            font-size: 1rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+            transform: rotate(25deg); /* 适配扇形裁剪方向 */
+            margin-top: -80px; /* 精准定位，无视觉偏移 */
+        }
+
+        /* 指针：固定顶部（0°），作为唯一对齐基准 */
+        .wheel-pointer {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 25px solid transparent;
+            border-right: 25px solid transparent;
+            border-bottom: 40px solid #ff4444;
+            z-index: 10;
+        }
+
+        /* 按钮：保持原有样式 */
+        .start-btn {
+            padding: 15px 45px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+            background-color: #ff4444;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 68, 68, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .start-btn:hover {
+            background-color: #ff2222;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255, 68, 68, 0.4);
+        }
+
+        .start-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* 结果区域：保持原有样式 */
+        .result-area {
+            margin-top: 20px;
+            font-size: 1.5rem;
+            color: #333;
+            font-weight: bold;
+            min-height: 2rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>美食随机转盘</h1>
+
+    <div class="wheel-container">
+        <div class="food-wheel" id="foodWheel"></div>
+        <div class="wheel-pointer"></div>
+    </div>
+
+    <button class="start-btn" id="startBtn">开始转动</button>
+    <div class="result-area" id="resultArea">点击按钮，开始抽取今日美食～</div>
+
+    <script>
+        // 1. 美食列表（8个，顺序与扇区一一对应）
+        const foodList = [
+            "火锅", "烤鱼", "烤肉", "麻辣烫",
+            "小龙虾", "寿司", "汉堡", "炸鸡"
+        ];
+
+        // 2. 颜色列表（8个，无重复，紫色仅1个）
+        const colorList = [
+            "#FF6B6B",  // 红（火锅）
+            "#4ECDC4",  // 青绿（烤鱼）
+            "#45B7D1",  // 天蓝（烤肉）
+            "#96CEB4",  // 浅绿（麻辣烫）
+            "#FECA57",  // 明黄（小龙虾）
+            "#FF9FF3",  // 粉（寿司）
+            "#54A0FF",  // 宝蓝（汉堡）
+            "#9C27B0"   // 深紫（炸鸡）
+        ];
+
+        // 3. DOM元素
+        const foodWheel = document.getElementById("foodWheel");
+        const startBtn = document.getElementById("startBtn");
+        const resultArea = document.getElementById("resultArea");
+
+        // 4. 初始化转盘：保持扇区索引与视觉顺序一致
+        function initWheel() {
+            const sectorCount = foodList.length;
+            const eachAngle = 360 / sectorCount; // 每个扇区45°
+
+            foodList.forEach((food, index) => {
+                const sector = document.createElement("div");
+                sector.className = "wheel-sector";
+
+                // 扇区起始角度（index * 45°），顺时针排列
+                const rotateAngle = index * eachAngle;
+                sector.style.transform = `rotate(${rotateAngle}deg)`;
+                sector.style.background = colorList[index];
+
+                const sectorText = document.createElement("div");
+                sectorText.className = "sector-text";
+                sectorText.innerText = food;
+
+                sector.appendChild(sectorText);
+                foodWheel.appendChild(sector);
+            });
+        }
+
+        // 5. 转动逻辑：核心修复——修正索引偏移，解决错一位问题
+        function rotateWheel() {
+            startBtn.disabled = true;
+            resultArea.innerText = "转盘转动中...";
+
+            const sectorCount = foodList.length;
+            const eachAngle = 360 / sectorCount; // 每个扇区45°
+            const sectorVisualCenter = eachAngle / 2; // 扇区可视中心偏移（22.5°）
+
+            // 1. 随机选中一个扇区（最终要显示的结果，指针将指向该扇区）
+            const targetSectorIndex = Math.floor(Math.random() * sectorCount);
+
+            // 2. 修复：修正索引偏移，解决错一位问题（核心！）
+            // 原因：扇形裁剪方向导致视觉指向比逻辑索引小1，需提前偏移一位匹配
+            const correctedSectorIndex = (targetSectorIndex + 1 + sectorCount) % sectorCount;
+            // 补充：+ sectorCount 再 % sectorCount 是为了避免索引为负数（当targetSectorIndex=0时，correctedSectorIndex=7，不会报错）
+
+            // 3. 计算修正后扇区的可视中心角度（对应指针指向）
+            const targetSectorCenterAngle = correctedSectorIndex * eachAngle + sectorVisualCenter;
+
+            // 4. 计算总旋转角度：多转5-10圈 + 让修正后扇区中心精准对准指针（0°）
+            const randomTurns = Math.floor(Math.random() * 6) + 5; // 5-10圈
+            const totalRotateAngle = (randomTurns * 360) - targetSectorCenterAngle;
+
+            // 5. 执行转动动画
+            foodWheel.style.transform = `rotate(${totalRotateAngle}deg)`;
+
+            // 6. 动画结束后，展示结果（与指针指向完全一致，无错位）
+            setTimeout(() => {
+                const targetFood = foodList[targetSectorIndex];
+                resultArea.innerText = `恭喜！今日美食锁定 → 【${targetFood}】🍽️`;
+                startBtn.disabled = false;
+            }, 3000); // 与CSS动画时长保持一致
+        }
+
+        // 6. 绑定事件与初始化
+        startBtn.addEventListener("click", rotateWheel);
+        window.onload = initWheel;
+    </script>
+</body>
+</html>
